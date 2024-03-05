@@ -1,0 +1,168 @@
+#include <SPI.h>
+/* Include the RFID library */
+#include <MFRC522.h>
+#include <Servo.h>
+Servo tap_servo;
+Servo tap_servo2;
+#include <Adafruit_GFX.h>// https://github.com/adafruit/Adafruit-GFX-Library
+#include <MCUFRIEND_kbv.h>// 
+https://github.com/prenticedavid/MCUFRIEND_kbv
+/* Define the DIO used for the SDA (SS) and RST (reset) pins. */
+#define PIN_SDA1 47
+#define PIN_SDA2 43
+#define PIN_RST  45
+int servo_keluar = 22;
+int servo_masuk = 24;
+#define JML_READER 2
+////SDA
+byte SDA_PIN[] = {PIN_SDA1,PIN_SDA2};
+////RFID
+MFRC522 mfrc522 [JML_READER];
+//Constants
+#define SD_CS 10
+#define BLACK 0
+#define GREY 21845
+#define BLUE 31
+#define RED 63488
+///Lambang mobil
+extern uint8_t car[];
+//Objects
+MCUFRIEND_kbv tft;
+int currentPage  = 0, oldPage = -1;
+
+int IR1 = 53;
+int IR2 = 51;
+
+int Slot = 5;           //Enter Total number of parking Slots
+
+int flag1 = 0;
+int flag2 = 0;
+
+unsigned int previous = 0x00;
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(IR1, INPUT);
+  pinMode(IR2, INPUT);
+
+
+  Serial.println(F("Initialize System"));
+  //Init tft screen
+  uint16_t ID = tft.readID();
+
+///untukservo
+  tap_servo.attach(servo_keluar);
+  tap_servo2.attach(servo_masuk);
+  Serial.println("Aktifkan reader");
+    for(int reader=0; reader < JML_READER; reader++)
+  {
+    mfrc522[reader].PCD_Init(SDA_PIN[reader],PIN_RST);
+    ///cek status
+    Serial.print("Reader " + String(reader));
+    Serial.print(": ");
+    mfrc522[reader].PCD_DumpVersionToSerial();
+    }
+}
+
+void loop() {
+  //mobil
+  drawBitmap(10 ,150, car, 195, 146,BLACK);
+   //Header
+  tft.drawRoundRect(0,0,480,100,10,WHITE);
+ 
+  //Counter
+  tft.drawRoundRect(245,110,235,100,10,WHITE);
+
+  tft.setCursor(20,20);
+  tft.setTextSize(3);
+  tft.print("Sistem Parkir Kendaraan");
+
+  //Counter header print
+  tft.setCursor(300,120);
+  tft.print("Jumlah");
+  
+    //Distance slide scale
+  tft.drawRoundRect(220,220,260,100,10,WHITE);
+  tft.setCursor(220,250);
+  tft.print("Selamat datang");
+  
+  if (digitalRead (IR1) == LOW && flag1 == 0) {
+    if (Slot > 0) {
+      flag1 = 1;
+      if (flag2 == 0) {
+        Slot = Slot - 1;
+      }
+    } else {
+      delay (1000);
+    }
+  }
+
+  if (digitalRead (IR2) == LOW && flag2 == 0) {
+    flag2 = 1;
+    if (flag1 == 0) {
+      Slot = Slot + 1;
+    }
+  }
+
+  if (flag1 == 1 && flag2 == 1) {
+    delay (1000);
+    flag1 = 0, flag2 = 0;
+  }
+  Serial.println("Slot Left: ");
+  Serial.println(Slot);
+  tft.fillRect(350,170,120,38,BLUE);
+  tft.setCursor(350,170);
+  previous = Slot;
+  tft.print(Slot); 
+  //////////////////////PROGRAM RFID
+    for(int reader = 0; reader < JML_READER; reader++)
+  {
+    if (mfrc522[reader].PICC_IsNewCardPresent()&&mfrc522[reader].PICC_ReadCardSerial())
+    {
+      //sediakan sebuah variabel untuk menampung kode tag rfid 
+      String IDTAG = "";
+      for(byte i=0; i < mfrc522[reader].uid.size; i++)
+      {
+        IDTAG += mfrc522 [reader].uid.uidByte[i];
+      }
+      ///cetak kode tag (IDTAG)
+       Serial.print("Reader " + String(reader));
+       Serial.print(": ");
+       Serial.println("UID: " + IDTAG);
+    //////Uji IDTAG
+       if(reader==0 && IDTAG )
+    {
+        tap_servo2.write(90);
+        delay(2000);
+        tap_servo2.write(0);
+      }
+      else if(reader==1 && IDTAG )
+     {
+        tap_servo.write(0);
+        delay(2000);
+        tap_servo.write(80);
+      }
+       delay(1000);
+       ///haltpicc/istirahatkan
+       mfrc522[reader].PICC_HaltA();
+       //hentikan proses enskripsi
+       mfrc522[reader].PCD_StopCrypto1();
+       
+      }
+    }
+}
+void drawBitmap(int16_t x, int16_t y,
+ const uint8_t *bitmap, int16_t w, int16_t h, uint16_t color) {
+
+  int16_t i, j, byteWidth = (w + 7) / 8;
+  uint8_t byte;
+
+  for(j=0; j<h; j++) {
+    for(i=0; i<w; i++) {
+      if(i & 7) byte <<= 1;
+      else      byte   = pgm_read_byte(bitmap + j * byteWidth + i / 8);
+      if(byte & 0x80) tft.drawPixel(x+i, y+j, color);
+    }
+  }
+}
